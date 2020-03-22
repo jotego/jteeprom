@@ -25,9 +25,9 @@ module jt9346(
     input      rst,        // system reset
     // chip interface
     input      sclk,       // serial clock
-    input      di,         // serial data in
-    output reg do,         // serial data out and ready/not busy signal
-    input      cs          // chip select, active high. Goes low in between instructions
+    input      sdi,         // serial data in
+    output reg sdo,         // serial data out and ready/not busy signal
+    input      scs          // chip select, active high. Goes low in between instructions
 );
 
 parameter SIZE = 64;
@@ -55,24 +55,24 @@ always @(posedge clk, posedge rst) begin
         cnt      <= 0;
         newdata  <= 16'hffff;
         st       <= WRITE_ALL;
-        do       <= 1'b0;
+        sdo       <= 1'b0;
     end else begin
         case( st )
             default: begin
-                do <= cs;
-                if( sclk_posedge && cs && di ) begin
+                sdo <= scs;
+                if( sclk_posedge && scs && sdi ) begin
                     st <= RX;
                     rx_cnt <= 16'hff80;
                 end
             end
-            RX: if( sclk_posedge && cs ) begin
+            RX: if( sclk_posedge && scs ) begin
                 rx_cnt <= { rx_cnt[15], rx_cnt[15:1] };
-                { op, addr } <= { full_op[6:0], di };
+                { op, addr } <= { full_op[6:0], sdi };
                 if( rx_cnt[0] ) begin
                     case( full_op[6:5] ) // op is in bits 6:5
                         2'b10: begin
                             st     <= READ;
-                            dout   <= mem[ {addr[4:0], di} ];
+                            dout   <= mem[ {addr[4:0], sdi} ];
                             rx_cnt <= 16'h8000;
                         end
                         2'b01: begin
@@ -81,7 +81,7 @@ always @(posedge clk, posedge rst) begin
                             write_all <= 1'b0;
                         end
                         2'b11: begin // ERASE
-                            mem[ {addr[4:0],di} ] <= 16'hffff;
+                            mem[ {addr[4:0],sdi} ] <= 16'hffff;
                             st <= IDLE;
                         end
                         2'b00: 
@@ -112,21 +112,21 @@ always @(posedge clk, posedge rst) begin
                     endcase
                 end
             end
-            WRITE: if( sclk_posedge && cs ) begin
-                newdata <= { newdata[14:0], di };
+            WRITE: if( sclk_posedge && scs ) begin
+                newdata <= { newdata[14:0], sdi };
                 rx_cnt <= { rx_cnt[15], rx_cnt[15:1] };
                 if( rx_cnt[0] ) begin
                     if( write_all ) begin
                         cnt <= 0;
                         st  <= WRITE_ALL;
                     end else begin
-                        mem[ addr ] <= { newdata[14:0], di };
+                        mem[ addr ] <= { newdata[14:0], sdi };
                         st <= IDLE;
                     end
                 end
             end
-            READ: if( sclk_posedge && cs ) begin
-                do <= dout[15];
+            READ: if( sclk_posedge && scs ) begin
+                sdo <= dout[15];
                 dout <= dout << 1;
                 rx_cnt <= { rx_cnt[15], rx_cnt[15:1] };
                 if( rx_cnt[0] ) begin
