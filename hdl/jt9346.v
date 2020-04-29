@@ -49,13 +49,21 @@ localparam IDLE=5'd1, RX=5'd2, READ=5'd4, WRITE=5'd8, WRITE_ALL=5'h10;
 
 always @(posedge clk) last_sclk <= sclk;
 
+`ifdef SIMULATION
+    `define REPORT_WRITE( a, v ) $display("EEPROM: %X written to %X", v, a);
+    `define REPORT_READ(  a, v ) $display("EEPROM: %X read from  %X", v, a);
+`else
+    `define REPORT_WRITE( a, v )
+    `define REPORT_READ(  a, v )
+`endif
+
 always @(posedge clk, posedge rst) begin
     if( rst ) begin
         erase_en <= 1'b0;
         cnt      <= 0;
         newdata  <= 16'hffff;
         st       <= WRITE_ALL;
-        sdo       <= 1'b0;
+        sdo      <= 1'b0;
     end else begin
         case( st )
             default: begin
@@ -72,6 +80,8 @@ always @(posedge clk, posedge rst) begin
                     case( full_op[6:5] ) // op is in bits 6:5
                         2'b10: begin
                             st     <= READ;
+                            sdo    <= 0;
+                            `REPORT_READ( {addr[4:0], sdi}, mem[ {addr[4:0], sdi} ] )
                             dout   <= mem[ {addr[4:0], sdi} ];
                             rx_cnt <= 16'h8000;
                         end
@@ -111,6 +121,8 @@ always @(posedge clk, posedge rst) begin
                             endcase
                     endcase
                 end
+            end else if(!scs) begin
+                st <= IDLE;
             end
             WRITE: if( sclk_posedge && scs ) begin
                 newdata <= { newdata[14:0], sdi };
@@ -120,14 +132,14 @@ always @(posedge clk, posedge rst) begin
                         cnt <= 0;
                         st  <= WRITE_ALL;
                     end else begin
+                        `REPORT_WRITE( addr, { newdata[14:0], sdi } )
                         mem[ addr ] <= { newdata[14:0], sdi };
                         st <= IDLE;
                     end
                 end
             end
             READ: if( sclk_posedge && scs ) begin
-                sdo <= dout[15];
-                dout <= dout << 1;
+                { sdo, dout} <= { dout, 1'b0 };
                 rx_cnt <= { rx_cnt[15], rx_cnt[15:1] };
                 if( rx_cnt[0] ) begin
                     st <= IDLE;
