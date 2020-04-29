@@ -52,6 +52,10 @@ always @(posedge clk) last_sclk <= sclk;
 `ifdef SIMULATION
     `define REPORT_WRITE( a, v ) $display("EEPROM: %X written to %X", v, a);
     `define REPORT_READ(  a, v ) $display("EEPROM: %X read from  %X", v, a);
+    `define REPORT_ERASEEN  $display("EEPROM: erase enabled");
+    `define REPORT_ERASEDIS $display("EEPROM: erase disabled");
+    `define REPORT_ERASEALL $display("EEPROM: erase all");
+    `define REPORT_WRITEALL $display("EEPROM: write all");
 `else
     `define REPORT_WRITE( a, v )
     `define REPORT_READ(  a, v )
@@ -67,7 +71,7 @@ always @(posedge clk, posedge rst) begin
     end else begin
         case( st )
             default: begin
-                sdo <= scs;
+                sdo <= 1; // ready
                 if( sclk_posedge && scs && sdi ) begin
                     st <= RX;
                     rx_cnt <= 16'hff80;
@@ -97,15 +101,19 @@ always @(posedge clk, posedge rst) begin
                         2'b00: 
                             case( full_op[4:3] )
                                 2'b11: begin
+                                    `REPORT_ERASEEN
                                     erase_en <= 1'b1;
                                     st <= IDLE;
                                 end
                                 2'b00: begin
+                                    `REPORT_ERASEDIS
                                     erase_en <= 1'b0;
                                     st <= IDLE;
                                 end
                                 2'b10: begin
                                     if( erase_en ) begin
+                                        `REPORT_ERASEALL
+                                        sdo     <= 0; // busy
                                         cnt     <= 0;
                                         newdata <= 16'hffff;
                                         st      <= WRITE_ALL;
@@ -114,6 +122,8 @@ always @(posedge clk, posedge rst) begin
                                     end
                                 end
                                 2'b01: begin
+                                    `REPORT_WRITEALL
+                                    sdo       <= 0; // busy
                                     st        <= WRITE;
                                     rx_cnt    <= 16'h8000;
                                     write_all <= 1'b1;
@@ -127,6 +137,7 @@ always @(posedge clk, posedge rst) begin
             WRITE: if( sclk_posedge && scs ) begin
                 newdata <= { newdata[14:0], sdi };
                 rx_cnt <= { rx_cnt[15], rx_cnt[15:1] };
+                sdo    <= 0; // busy
                 if( rx_cnt[0] ) begin
                     if( write_all ) begin
                         cnt <= 0;
@@ -137,6 +148,8 @@ always @(posedge clk, posedge rst) begin
                         st <= IDLE;
                     end
                 end
+            end else if(!scs) begin
+                st <= IDLE;
             end
             READ: if( sclk_posedge && scs ) begin
                 { sdo, dout} <= { dout, 1'b0 };
@@ -144,6 +157,8 @@ always @(posedge clk, posedge rst) begin
                 if( rx_cnt[0] ) begin
                     st <= IDLE;
                 end
+            end else if(!scs) begin
+                st <= IDLE;
             end
             WRITE_ALL: begin
                 mem[cnt] <= newdata;
