@@ -42,16 +42,17 @@ reg  [15:0] rx_cnt;
 reg  [15:0] newdata;
 reg  [15:0] dout;
 wire [ 7:0] full_op = { op, addr };
-reg  [ 4:0] st;
+reg  [ 5:0] st;
 reg  [ 5:0] cnt;
 
-localparam IDLE=5'd1, RX=5'd2, READ=5'd4, WRITE=5'd8, WRITE_ALL=5'h10;
+localparam IDLE=6'd1, RX=6'd2, READ=6'd4, WRITE=6'd8, WRITE_ALL=6'h10, PRE_READ=6'h20;
 
 always @(posedge clk) last_sclk <= sclk;
 
 `ifdef SIMULATION
     `define REPORT_WRITE( a, v ) $display("EEPROM: %X written to %X", v, a);
     `define REPORT_READ(  a, v ) $display("EEPROM: %X read from  %X", v, a);
+    `define REPORT_ERASE(  a ) $display("EEPROM: %X ERASED", a);
     `define REPORT_ERASEEN  $display("EEPROM: erase enabled");
     `define REPORT_ERASEDIS $display("EEPROM: erase disabled");
     `define REPORT_ERASEALL $display("EEPROM: erase all");
@@ -59,6 +60,11 @@ always @(posedge clk) last_sclk <= sclk;
 `else
     `define REPORT_WRITE( a, v )
     `define REPORT_READ(  a, v )
+    `define REPORT_ERASE(  a )
+    `define REPORT_ERASEEN
+    `define REPORT_ERASEDIS
+    `define REPORT_ERASEALL
+    `define REPORT_WRITEALL
 `endif
 
 always @(posedge clk, posedge rst) begin
@@ -87,7 +93,7 @@ always @(posedge clk, posedge rst) begin
                             sdo    <= 0;
                             `REPORT_READ( {addr[4:0], sdi}, mem[ {addr[4:0], sdi} ] )
                             dout   <= mem[ {addr[4:0], sdi} ];
-                            rx_cnt <= 16'h8000;
+                            rx_cnt <= 16'hFFFF;
                         end
                         2'b01: begin
                             st        <= WRITE;
@@ -95,6 +101,7 @@ always @(posedge clk, posedge rst) begin
                             write_all <= 1'b0;
                         end
                         2'b11: begin // ERASE
+                            `REPORT_ERASE( {addr[4:0], sdi} )
                             mem[ {addr[4:0],sdi} ] <= 16'hffff;
                             st <= IDLE;
                         end
@@ -151,10 +158,15 @@ always @(posedge clk, posedge rst) begin
             end else if(!scs) begin
                 st <= IDLE;
             end
+            /*
+            PRE_READ: if( sclk_posedge && scs ) begin
+                st <= READ;
+                sdo <= 0;
+            end else if(!scs) st<=IDLE;*/
             READ: if( sclk_posedge && scs ) begin
-                { sdo, dout} <= { dout, 1'b0 };
-                rx_cnt <= { rx_cnt[15], rx_cnt[15:1] };
-                if( rx_cnt[0] ) begin
+                if(rx_cnt[0]) { sdo, dout} <= { dout, 1'b0 };
+                rx_cnt <= rx_cnt>>1;
+                if( ~|rx_cnt ) begin
                     st <= IDLE;
                 end
             end else if(!scs) begin
