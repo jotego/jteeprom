@@ -48,25 +48,25 @@ reg  [ 5:0] cnt;
 localparam IDLE=6'd1, RX=6'd2, READ=6'd4, WRITE=6'd8, WRITE_ALL=6'h10, PRE_READ=6'h20;
 
 always @(posedge clk) last_sclk <= sclk;
-
-`ifdef SIMULATION
-    `define REPORT_WRITE( a, v ) $display("EEPROM: %X written to %X", v, a);
-    `define REPORT_READ(  a, v ) $display("EEPROM: %X read from  %X", v, a);
-    `define REPORT_ERASE(  a ) $display("EEPROM: %X ERASED", a);
+/*
+`ifdef JT9346_SIMULATION
+    `define REPORT_WRITE (a,v) $display("EEPROM: %X written to %X", v, a);
+    `define REPORT_READ  (a,v) $display("EEPROM: %X read from  %X", v, a);
+    `define REPORT_ERASE (a  ) $display("EEPROM: %X ERASED", a);
     `define REPORT_ERASEEN  $display("EEPROM: erase enabled");
     `define REPORT_ERASEDIS $display("EEPROM: erase disabled");
     `define REPORT_ERASEALL $display("EEPROM: erase all");
     `define REPORT_WRITEALL $display("EEPROM: write all");
 `else
-    `define REPORT_WRITE( a, v )
-    `define REPORT_READ(  a, v )
-    `define REPORT_ERASE(  a )
+    `define REPORT_WRITE (a,v)
+    `define REPORT_READ  (a,v)
+    `define REPORT_ERASE (a)
     `define REPORT_ERASEEN
     `define REPORT_ERASEDIS
     `define REPORT_ERASEALL
     `define REPORT_WRITEALL
 `endif
-
+*/
 always @(posedge clk, posedge rst) begin
     if( rst ) begin
         erase_en <= 1'b0;
@@ -91,7 +91,7 @@ always @(posedge clk, posedge rst) begin
                         2'b10: begin
                             st     <= READ;
                             sdo    <= 0;
-                            `REPORT_READ( {addr[4:0], sdi}, mem[ {addr[4:0], sdi} ] )
+                            //`REPORT_READ ( {addr[4:0], sdi}, mem[ {addr[4:0], sdi} ] )
                             dout   <= mem[ {addr[4:0], sdi} ];
                             rx_cnt <= 16'hFFFF;
                         end
@@ -101,25 +101,25 @@ always @(posedge clk, posedge rst) begin
                             write_all <= 1'b0;
                         end
                         2'b11: begin // ERASE
-                            `REPORT_ERASE( {addr[4:0], sdi} )
+                            //`REPORT_ERASE({addr[4:0],sdi});
                             mem[ {addr[4:0],sdi} ] <= 16'hffff;
                             st <= IDLE;
                         end
                         2'b00: 
                             case( full_op[4:3] )
                                 2'b11: begin
-                                    `REPORT_ERASEEN
+                                    //`REPORT_ERASEEN
                                     erase_en <= 1'b1;
                                     st <= IDLE;
                                 end
                                 2'b00: begin
-                                    `REPORT_ERASEDIS
+                                    //`REPORT_ERASEDIS
                                     erase_en <= 1'b0;
                                     st <= IDLE;
                                 end
                                 2'b10: begin
                                     if( erase_en ) begin
-                                        `REPORT_ERASEALL
+                                        //`REPORT_ERASEALL
                                         sdo     <= 0; // busy
                                         cnt     <= 0;
                                         newdata <= 16'hffff;
@@ -129,7 +129,7 @@ always @(posedge clk, posedge rst) begin
                                     end
                                 end
                                 2'b01: begin
-                                    `REPORT_WRITEALL
+                                    //`REPORT_WRITEALL
                                     sdo       <= 0; // busy
                                     st        <= WRITE;
                                     rx_cnt    <= 16'h8000;
@@ -150,7 +150,7 @@ always @(posedge clk, posedge rst) begin
                         cnt <= 0;
                         st  <= WRITE_ALL;
                     end else begin
-                        `REPORT_WRITE( addr, { newdata[14:0], sdi } )
+                        //`REPORT_WRITE( addr, { newdata[14:0], sdi } )
                         mem[ addr ] <= { newdata[14:0], sdi };
                         st <= IDLE;
                     end
@@ -174,7 +174,7 @@ always @(posedge clk, posedge rst) begin
             end
             WRITE_ALL: begin
                 mem[cnt] <= newdata;
-                cnt <= cnt+1;
+                cnt <= cnt+6'd1;
                 if( cnt == SIZE-1 ) st<=IDLE;
             end
         endcase
