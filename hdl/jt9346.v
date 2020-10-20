@@ -28,11 +28,8 @@ module jt9346(
     input      scs          // chip select, active high. Goes low in between instructions
 );
 
-// X16 devices use AW=6, DW=16
-// X8  devices use AW=7, DW=8
-parameter DW=16;
+parameter DW=16, AW=6;
 
-localparam AW = DW==16 ? 6 : 7;
 localparam AMAX=2**AW-1;
 
 reg  [DW-1:0] mem[0:AMAX];
@@ -44,9 +41,10 @@ reg  [AW-1:0] addr, cnt;
 reg  [DW-1:0] rx_cnt, newdata, dout;
 wire [AW+1:0] full_op = { op, addr };
 wire [AW-1:0] new_addr = {addr[AW-2:0], sdi};
-reg  [   5:0] st;
+reg  [   6:0] st;
 
-localparam IDLE=6'd1, RX=6'd2, READ=6'd4, WRITE=6'd8, WRITE_ALL=6'h10, PRE_READ=6'h20;
+localparam IDLE=7'd1, RX=7'd2, READ=7'd4, WRITE=7'd8, WRITE_ALL=7'h10,
+           PRE_READ=7'h20, WAITLOW=7'h40;
 
 always @(posedge clk) last_sclk <= sclk;
 
@@ -91,12 +89,13 @@ always @(posedge clk, posedge rst) begin
                 sdo <= 1; // ready
                 if( sclk_posedge && scs && sdi ) begin
                     st <= RX;
-                    rx_cnt <= { {DW-7{1'b1}}, 7'd0 };
+                    rx_cnt <= { {DW-1{1'b0}}, 1'b1 } << (AW+1);
                 end
             end
+            WAITLOW: if( !scs ) st <= IDLE;
             RX: if( sclk_posedge && scs ) begin
                 rx_cnt <= { rx_cnt[DW-1], rx_cnt[DW-1:1] };
-                { op, addr } <= { full_op[6:0], sdi };
+                { op, addr } <= { full_op[AW:0], sdi };
                 if( rx_cnt[0] ) begin
                     case( full_op[6:5] ) // op is in bits 6:5
                         2'b10: begin
@@ -114,19 +113,19 @@ always @(posedge clk, posedge rst) begin
                         2'b11: begin // ERASE
                             `REPORT_ERASE(new_addr);
                             mem[ new_addr ] <= {DW{1'b1}};
-                            st <= IDLE;
+                            st <= WAITLOW;
                         end
                         2'b00:
                             case( full_op[4:3] )
                                 2'b11: begin
                                     `REPORT_ERASEEN
                                     erase_en <= 1;
-                                    st <= IDLE;
+                                    st <= WAITLOW;
                                 end
                                 2'b00: begin
                                     `REPORT_ERASEDIS
                                     erase_en <= 0;
-                                    st <= IDLE;
+                                    st <= WAITLOW;
                                 end
                                 2'b10: begin
                                     if( erase_en ) begin
@@ -136,7 +135,7 @@ always @(posedge clk, posedge rst) begin
                                         newdata <= {DW{1'b1}};
                                         st      <= WRITE_ALL;
                                     end else begin
-                                        st <= IDLE;
+                                        st <= WAITLOW;
                                     end
                                 end
                                 2'b01: begin
@@ -154,7 +153,7 @@ always @(posedge clk, posedge rst) begin
             end
             WRITE: if( sclk_posedge && scs ) begin
                 newdata <= { newdata[DW-2:0], sdi };
-                rx_cnt <= { rx_cnt[DW-1], rx_cnt[DW-1:1] };
+                rx_cnt <= rx_cnt >> 1;
                 sdo    <= 0; // busy
                 if( rx_cnt[0] ) begin
                     if( write_all ) begin
@@ -163,7 +162,6 @@ always @(posedge clk, posedge rst) begin
                     end else begin
                         `REPORT_WRITE( addr, { newdata[DW-2:0], sdi } )
                         mem[ addr ] <= { newdata[DW-2:0], sdi };
-                        st <= IDLE;
                     end
                 end
             end else if(!scs) begin
@@ -175,18 +173,22 @@ always @(posedge clk, posedge rst) begin
                 sdo <= 0;
             end else if(!scs) st<=IDLE;*/
             READ: if( sclk_posedge && scs ) begin
-                if(rx_cnt[0]) { sdo, dout} <= { dout, 1'b0 };
-                rx_cnt <= rx_cnt>>1;
-                if( ~|rx_cnt ) begin
-                    st <= IDLE;
-                end
+                // if(rx_cnt[0])
+                    { sdo, dout} <= { dout, 1'b0 };
+                // rx_cnt <= rx_cnt>>1;
+                // if( ~|rx_cnt ) begin
+                //     st <= IDLE;
+                // end
             end else if(!scs) begin
                 st <= IDLE;
             end
             WRITE_ALL: begin
                 mem[cnt] <= newdata;
-                cnt <= cnt+1'd1;
-                if( &cnt ) st<=IDLE;
+                if( &cnt ) begin
+                    if(!scs) st<=IDLE;
+                end else begin
+                    cnt <= cnt+1'd1;
+                end
             end
         endcase
     end
