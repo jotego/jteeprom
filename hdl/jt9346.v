@@ -16,8 +16,6 @@
     Version: 1.0
     Date: 21-3-2020 */
 
-`timescale 1ns/1ps
-
 // Module compatible with Microchip 96C06/46
 
 module jt9346(
@@ -45,6 +43,7 @@ reg  [   1:0] op;
 reg  [AW-1:0] addr, cnt;
 reg  [DW-1:0] rx_cnt, newdata, dout;
 wire [AW+1:0] full_op = { op, addr };
+wire [AW-1:0] new_addr = {addr[AW-2:0], sdi};
 reg  [   5:0] st;
 
 localparam IDLE=6'd1, RX=6'd2, READ=6'd4, WRITE=6'd8, WRITE_ALL=6'h10, PRE_READ=6'h20;
@@ -69,12 +68,20 @@ always @(posedge clk) last_sclk <= sclk;
     `define REPORT_WRITEALL
 `endif
 
+`ifdef SIMULATION
+integer clrcnt;
+initial begin
+    for( clrcnt=0; clrcnt<=AMAX; clrcnt=clrcnt+1)
+        mem[clrcnt] = {DW{1'b1}};
+end
+`endif
+
 always @(posedge clk, posedge rst) begin
     if( rst ) begin
         erase_en <= 0;
         cnt      <= {AW{1'b0}};
         newdata  <= {DW{1'b1}};
-        st       <= WRITE_ALL;
+        st       <= IDLE;
         sdo      <= 0;
         addr     <= {AW{1'b0}};
         op       <= 2'd0;
@@ -95,8 +102,8 @@ always @(posedge clk, posedge rst) begin
                         2'b10: begin
                             st     <= READ;
                             sdo    <= 0;
-                            `REPORT_READ ( {addr[AW-1:0], sdi}, mem[ {addr[AW-1:0], sdi} ] )
-                            dout   <= mem[ {addr[AW-1:0], sdi} ];
+                            `REPORT_READ ( new_addr, mem[ new_addr ] )
+                            dout   <= mem[ new_addr ];
                             rx_cnt <= {DW{1'b1}};
                         end
                         2'b01: begin
@@ -105,8 +112,8 @@ always @(posedge clk, posedge rst) begin
                             write_all <= 1'b0;
                         end
                         2'b11: begin // ERASE
-                            `REPORT_ERASE({addr[AW-1:0],sdi});
-                            mem[ {addr[AW-1:0],sdi} ] <= {DW{1'b1}};
+                            `REPORT_ERASE(new_addr);
+                            mem[ new_addr ] <= {DW{1'b1}};
                             st <= IDLE;
                         end
                         2'b00:
