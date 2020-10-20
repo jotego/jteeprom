@@ -15,7 +15,7 @@
     Author: Jose Tejada Gomez. Twitter: @topapate
     Version: 1.0
     Date: 21-3-2020 */
-    
+
 `timescale 1ns/1ps
 
 // Module compatible with Microchip 96C06/46
@@ -30,110 +30,114 @@ module jt9346(
     input      scs          // chip select, active high. Goes low in between instructions
 );
 
-parameter SIZE = 64;
+// X16 devices use AW=6, DW=16
+// X8  devices use AW=7, DW=8
+parameter DW=16;
 
-reg  [15:0] mem[0:SIZE-1];
-reg         erase_en, write_all;
-reg         last_sclk;
-wire        sclk_posedge = sclk && !last_sclk;
-reg  [ 1:0] op;
-reg  [ 5:0] addr;
-reg  [15:0] rx_cnt;
-reg  [15:0] newdata;
-reg  [15:0] dout;
-wire [ 7:0] full_op = { op, addr };
-reg  [ 5:0] st;
-reg  [ 5:0] cnt;
+localparam AW = DW==16 ? 6 : 7;
+localparam AMAX=2**AW-1;
+
+reg  [DW-1:0] mem[0:AMAX];
+reg           erase_en, write_all;
+reg           last_sclk;
+wire          sclk_posedge = sclk && !last_sclk;
+reg  [   1:0] op;
+reg  [AW-1:0] addr, cnt;
+reg  [DW-1:0] rx_cnt, newdata, dout;
+wire [AW+1:0] full_op = { op, addr };
+reg  [   5:0] st;
 
 localparam IDLE=6'd1, RX=6'd2, READ=6'd4, WRITE=6'd8, WRITE_ALL=6'h10, PRE_READ=6'h20;
 
 always @(posedge clk) last_sclk <= sclk;
-/*
+
 `ifdef JT9346_SIMULATION
-    `define REPORT_WRITE (a,v) $display("EEPROM: %X written to %X", v, a);
-    `define REPORT_READ  (a,v) $display("EEPROM: %X read from  %X", v, a);
-    `define REPORT_ERASE (a  ) $display("EEPROM: %X ERASED", a);
+    `define REPORT_WRITE(a,v) $display("EEPROM: %X written to %X", v, a);
+    `define REPORT_READ(a,v) $display("EEPROM: %X read from  %X", v, a);
+    `define REPORT_ERASE(a  ) $display("EEPROM: %X ERASED", a);
     `define REPORT_ERASEEN  $display("EEPROM: erase enabled");
     `define REPORT_ERASEDIS $display("EEPROM: erase disabled");
     `define REPORT_ERASEALL $display("EEPROM: erase all");
     `define REPORT_WRITEALL $display("EEPROM: write all");
 `else
-    `define REPORT_WRITE (a,v)
-    `define REPORT_READ  (a,v)
-    `define REPORT_ERASE (a)
+    `define REPORT_WRITE(a,v)
+    `define REPORT_READ(a,v)
+    `define REPORT_ERASE(a)
     `define REPORT_ERASEEN
     `define REPORT_ERASEDIS
     `define REPORT_ERASEALL
     `define REPORT_WRITEALL
 `endif
-*/
+
 always @(posedge clk, posedge rst) begin
     if( rst ) begin
-        erase_en <= 1'b0;
-        cnt      <= 0;
-        newdata  <= 16'hffff;
+        erase_en <= 0;
+        cnt      <= {AW{1'b0}};
+        newdata  <= {DW{1'b1}};
         st       <= WRITE_ALL;
-        sdo      <= 1'b0;
+        sdo      <= 0;
+        addr     <= {AW{1'b0}};
+        op       <= 2'd0;
     end else begin
         case( st )
-            default: begin
+            default: begin // IDLE
                 sdo <= 1; // ready
                 if( sclk_posedge && scs && sdi ) begin
                     st <= RX;
-                    rx_cnt <= 16'hff80;
+                    rx_cnt <= { {DW-7{1'b1}}, 7'd0 };
                 end
             end
             RX: if( sclk_posedge && scs ) begin
-                rx_cnt <= { rx_cnt[15], rx_cnt[15:1] };
+                rx_cnt <= { rx_cnt[DW-1], rx_cnt[DW-1:1] };
                 { op, addr } <= { full_op[6:0], sdi };
                 if( rx_cnt[0] ) begin
                     case( full_op[6:5] ) // op is in bits 6:5
                         2'b10: begin
                             st     <= READ;
                             sdo    <= 0;
-                            //`REPORT_READ ( {addr[4:0], sdi}, mem[ {addr[4:0], sdi} ] )
-                            dout   <= mem[ {addr[4:0], sdi} ];
-                            rx_cnt <= 16'hFFFF;
+                            `REPORT_READ ( {addr[AW-1:0], sdi}, mem[ {addr[AW-1:0], sdi} ] )
+                            dout   <= mem[ {addr[AW-1:0], sdi} ];
+                            rx_cnt <= {DW{1'b1}};
                         end
                         2'b01: begin
                             st        <= WRITE;
-                            rx_cnt    <= 16'h8000;
+                            rx_cnt    <= { 1'b1, {DW-1{1'b0}}};
                             write_all <= 1'b0;
                         end
                         2'b11: begin // ERASE
-                            //`REPORT_ERASE({addr[4:0],sdi});
-                            mem[ {addr[4:0],sdi} ] <= 16'hffff;
+                            `REPORT_ERASE({addr[AW-1:0],sdi});
+                            mem[ {addr[AW-1:0],sdi} ] <= {DW{1'b1}};
                             st <= IDLE;
                         end
-                        2'b00: 
+                        2'b00:
                             case( full_op[4:3] )
                                 2'b11: begin
-                                    //`REPORT_ERASEEN
-                                    erase_en <= 1'b1;
+                                    `REPORT_ERASEEN
+                                    erase_en <= 1;
                                     st <= IDLE;
                                 end
                                 2'b00: begin
-                                    //`REPORT_ERASEDIS
-                                    erase_en <= 1'b0;
+                                    `REPORT_ERASEDIS
+                                    erase_en <= 0;
                                     st <= IDLE;
                                 end
                                 2'b10: begin
                                     if( erase_en ) begin
-                                        //`REPORT_ERASEALL
+                                        `REPORT_ERASEALL
                                         sdo     <= 0; // busy
                                         cnt     <= 0;
-                                        newdata <= 16'hffff;
+                                        newdata <= {DW{1'b1}};
                                         st      <= WRITE_ALL;
                                     end else begin
                                         st <= IDLE;
                                     end
                                 end
                                 2'b01: begin
-                                    //`REPORT_WRITEALL
+                                    `REPORT_WRITEALL
                                     sdo       <= 0; // busy
                                     st        <= WRITE;
-                                    rx_cnt    <= 16'h8000;
-                                    write_all <= 1'b1;
+                                    rx_cnt    <= { 1'b1, {DW-1{1'b0}}};
+                                    write_all <= 1;
                                 end
                             endcase
                     endcase
@@ -142,16 +146,16 @@ always @(posedge clk, posedge rst) begin
                 st <= IDLE;
             end
             WRITE: if( sclk_posedge && scs ) begin
-                newdata <= { newdata[14:0], sdi };
-                rx_cnt <= { rx_cnt[15], rx_cnt[15:1] };
+                newdata <= { newdata[DW-2:0], sdi };
+                rx_cnt <= { rx_cnt[DW-1], rx_cnt[DW-1:1] };
                 sdo    <= 0; // busy
                 if( rx_cnt[0] ) begin
                     if( write_all ) begin
                         cnt <= 0;
                         st  <= WRITE_ALL;
                     end else begin
-                        //`REPORT_WRITE( addr, { newdata[14:0], sdi } )
-                        mem[ addr ] <= { newdata[14:0], sdi };
+                        `REPORT_WRITE( addr, { newdata[DW-2:0], sdi } )
+                        mem[ addr ] <= { newdata[DW-2:0], sdi };
                         st <= IDLE;
                     end
                 end
@@ -174,8 +178,8 @@ always @(posedge clk, posedge rst) begin
             end
             WRITE_ALL: begin
                 mem[cnt] <= newdata;
-                cnt <= cnt+6'd1;
-                if( cnt == SIZE-1 ) st<=IDLE;
+                cnt <= cnt+1'd1;
+                if( &cnt ) st<=IDLE;
             end
         endcase
     end
