@@ -37,10 +37,12 @@ reg           erase_en, write_all;
 reg           last_sclk;
 wire          sclk_posedge = sclk && !last_sclk;
 reg  [AW-1:0] addr, cnt;
-reg  [DW-1:0] rx_cnt, newdata, dout;
+reg  [DW-1:0] newdata, dout;
+reg  [  15:0] rx_cnt;
 reg  [   1:0] op;
 reg  [   6:0] st;
 wire [AW-1:0] next_addr = {addr[AW-2:0], sdi};
+wire [DW-1:0] next_data = { newdata[DW-2:0], sdi };
 wire [AW+1:0] full_op = { op, addr };
 
 localparam IDLE=7'd1, RX=7'd2, READ=7'd4, WRITE=7'd8, WRITE_ALL=7'h10,
@@ -140,6 +142,7 @@ always @(posedge clk, posedge rst) begin
                                     `REPORT_WRITEALL
                                     sdo       <= 0; // busy
                                     st        <= WRITE;
+                                    newdata   <= {DW{1'b1}};
                                     rx_cnt    <= 16'h1 << (DW-1);
                                     write_all <= 1'b1;
                                 end
@@ -148,16 +151,16 @@ always @(posedge clk, posedge rst) begin
                 end
             end
             WRITE: if( sclk_posedge && scs ) begin
-                newdata <= { newdata[DW-2:0], sdi };
-                rx_cnt <= { rx_cnt[15], rx_cnt[15:1] };
-                sdo    <= 0; // busy
+                newdata <= next_data;
+                rx_cnt  <= rx_cnt>>1;
+                sdo     <= 0; // busy
                 if( rx_cnt[0] ) begin
                     if( write_all ) begin
                         cnt <= 0;
                         st  <= WRITE_ALL;
                     end else begin
-                        `REPORT_WRITE( addr, { newdata[14:0], sdi } )
-                        mem[ addr ] <= { newdata[14:0], sdi };
+                        `REPORT_WRITE( addr, next_data )
+                        mem[ addr ] <= next_data;
                         st <= WAIT;
                     end
                 end
