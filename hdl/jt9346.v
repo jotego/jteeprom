@@ -15,7 +15,7 @@
     Author: Jose Tejada Gomez. Twitter: @topapate
     Version: 1.0
     Date: 21-3-2020 */
-    
+
 `timescale 1ns/1ps
 
 // Module compatible with Microchip 96C06/46
@@ -30,69 +30,77 @@ module jt9346(
     input      scs          // chip select, active high. Goes low in between instructions
 );
 
-parameter SIZE = 64;
+parameter AW=6, DW=16;
 
-reg  [15:0] mem[0:SIZE-1];
-reg         erase_en, write_all;
-reg         last_sclk;
-wire        sclk_posedge = sclk && !last_sclk;
-reg  [ 1:0] op;
-reg  [ 5:0] addr;
-reg  [15:0] rx_cnt;
-reg  [15:0] newdata;
-reg  [15:0] dout;
-wire [ 7:0] full_op = { op, addr };
-reg  [ 5:0] st;
-reg  [ 5:0] cnt;
+reg  [DW-1:0] mem[0:2**AW-1];
+reg           erase_en, write_all;
+reg           last_sclk;
+wire          sclk_posedge = sclk && !last_sclk;
+reg  [AW-1:0] addr, cnt;
+reg  [DW-1:0] rx_cnt, newdata, dout;
+reg  [   1:0] op;
+reg  [   6:0] st;
+wire [AW-1:0] next_addr = {addr[AW-2:0], sdi};
+wire [AW+1:0] full_op = { op, addr };
 
-localparam IDLE=6'd1, RX=6'd2, READ=6'd4, WRITE=6'd8, WRITE_ALL=6'h10, PRE_READ=6'h20;
+localparam IDLE=7'd1, RX=7'd2, READ=7'd4, WRITE=7'd8, WRITE_ALL=7'h10,
+           PRE_READ=7'h20, WAIT=7'h40;
 
 always @(posedge clk) last_sclk <= sclk;
-/*
+
 `ifdef JT9346_SIMULATION
-    `define REPORT_WRITE (a,v) $display("EEPROM: %X written to %X", v, a);
-    `define REPORT_READ  (a,v) $display("EEPROM: %X read from  %X", v, a);
-    `define REPORT_ERASE (a  ) $display("EEPROM: %X ERASED", a);
+    `define REPORT_WRITE(a,v) $display("EEPROM: %X written to %X", v, a);
+    `define REPORT_READ(a,v) $display("EEPROM: %X read from  %X", v, a);
+    `define REPORT_ERASE(a  ) $display("EEPROM: %X ERASED", a);
     `define REPORT_ERASEEN  $display("EEPROM: erase enabled");
     `define REPORT_ERASEDIS $display("EEPROM: erase disabled");
     `define REPORT_ERASEALL $display("EEPROM: erase all");
     `define REPORT_WRITEALL $display("EEPROM: write all");
 `else
-    `define REPORT_WRITE (a,v)
-    `define REPORT_READ  (a,v)
-    `define REPORT_ERASE (a)
+    `define REPORT_WRITE(a,v)
+    `define REPORT_READ(a,v)
+    `define REPORT_ERASE(a)
     `define REPORT_ERASEEN
     `define REPORT_ERASEDIS
     `define REPORT_ERASEALL
     `define REPORT_WRITEALL
 `endif
-*/
+
+`ifdef SIMULATION
+integer rstcnt;
+initial begin
+    for( rstcnt=0; rstcnt<2**AW; rstcnt=rstcnt+1)
+        mem[rstcnt] = {DW{1'b1}};
+end
+`endif
+
 always @(posedge clk, posedge rst) begin
     if( rst ) begin
-        erase_en <= 1'b0;
+        erase_en <= 0;
         cnt      <= 0;
-        newdata  <= 16'hffff;
-        st       <= WRITE_ALL;
+        newdata  <= {DW{1'b1}};
+        st       <= IDLE;
         sdo      <= 1'b0;
-    end else begin
+    end else if( !scs ) st <= IDLE;
+    else begin
         case( st )
             default: begin
                 sdo <= 1; // ready
                 if( sclk_posedge && scs && sdi ) begin
                     st <= RX;
-                    rx_cnt <= 16'hff80;
+                    rx_cnt <= 16'h1 << (AW+1);
                 end
             end
             RX: if( sclk_posedge && scs ) begin
-                rx_cnt <= { rx_cnt[15], rx_cnt[15:1] };
-                { op, addr } <= { full_op[6:0], sdi };
+                rx_cnt <= rx_cnt>>1;
+                { op, addr } <= { full_op[AW:0], sdi };
                 if( rx_cnt[0] ) begin
-                    case( full_op[6:5] ) // op is in bits 6:5
+                    case( full_op[AW:AW-1] ) // op is in bits 6:5
                         2'b10: begin
                             st     <= READ;
                             sdo    <= 0;
-                            //`REPORT_READ ( {addr[4:0], sdi}, mem[ {addr[4:0], sdi} ] )
-                            dout   <= mem[ {addr[4:0], sdi} ];
+                            `REPORT_READ ( next_addr, mem[ next_addr ] )
+                            dout   <= mem[ next_addr ];
                             rx_cnt <= 16'hFFFF;
                         end
                         2'b01: begin
@@ -101,48 +109,46 @@ always @(posedge clk, posedge rst) begin
                             write_all <= 1'b0;
                         end
                         2'b11: begin // ERASE
-                            //`REPORT_ERASE({addr[4:0],sdi});
-                            mem[ {addr[4:0],sdi} ] <= 16'hffff;
-                            st <= IDLE;
+                            `REPORT_ERASE(next_addr);
+                            mem[ next_addr ] <= {DW{1'b1}};
+                            st <= WAIT;
                         end
-                        2'b00: 
-                            case( full_op[4:3] )
+                        2'b00:
+                            case( full_op[AW-2:AW-3] )
                                 2'b11: begin
-                                    //`REPORT_ERASEEN
+                                    `REPORT_ERASEEN
                                     erase_en <= 1'b1;
-                                    st <= IDLE;
+                                    st <= WAIT;
                                 end
                                 2'b00: begin
-                                    //`REPORT_ERASEDIS
+                                    `REPORT_ERASEDIS
                                     erase_en <= 1'b0;
-                                    st <= IDLE;
+                                    st <= WAIT;
                                 end
                                 2'b10: begin
                                     if( erase_en ) begin
-                                        //`REPORT_ERASEALL
+                                        `REPORT_ERASEALL
                                         sdo     <= 0; // busy
                                         cnt     <= 0;
-                                        newdata <= 16'hffff;
+                                        newdata <= {DW{1'b1}};
                                         st      <= WRITE_ALL;
                                     end else begin
-                                        st <= IDLE;
+                                        st <= WAIT;
                                     end
                                 end
                                 2'b01: begin
-                                    //`REPORT_WRITEALL
+                                    `REPORT_WRITEALL
                                     sdo       <= 0; // busy
                                     st        <= WRITE;
-                                    rx_cnt    <= 16'h8000;
+                                    rx_cnt    <= 16'h1 << (DW-1);
                                     write_all <= 1'b1;
                                 end
                             endcase
                     endcase
                 end
-            end else if(!scs) begin
-                st <= IDLE;
             end
             WRITE: if( sclk_posedge && scs ) begin
-                newdata <= { newdata[14:0], sdi };
+                newdata <= { newdata[DW-2:0], sdi };
                 rx_cnt <= { rx_cnt[15], rx_cnt[15:1] };
                 sdo    <= 0; // busy
                 if( rx_cnt[0] ) begin
@@ -150,13 +156,11 @@ always @(posedge clk, posedge rst) begin
                         cnt <= 0;
                         st  <= WRITE_ALL;
                     end else begin
-                        //`REPORT_WRITE( addr, { newdata[14:0], sdi } )
+                        `REPORT_WRITE( addr, { newdata[14:0], sdi } )
                         mem[ addr ] <= { newdata[14:0], sdi };
-                        st <= IDLE;
+                        st <= WAIT;
                     end
                 end
-            end else if(!scs) begin
-                st <= IDLE;
             end
             /*
             PRE_READ: if( sclk_posedge && scs ) begin
@@ -164,19 +168,16 @@ always @(posedge clk, posedge rst) begin
                 sdo <= 0;
             end else if(!scs) st<=IDLE;*/
             READ: if( sclk_posedge && scs ) begin
-                if(rx_cnt[0]) { sdo, dout} <= { dout, 1'b0 };
-                rx_cnt <= rx_cnt>>1;
-                if( ~|rx_cnt ) begin
-                    st <= IDLE;
-                end
+                { sdo, dout} <= { dout, 1'b1 };
             end else if(!scs) begin
                 st <= IDLE;
             end
             WRITE_ALL: begin
                 mem[cnt] <= newdata;
                 cnt <= cnt+6'd1;
-                if( cnt == SIZE-1 ) st<=IDLE;
+                if( &cnt ) st <= WAIT;
             end
+            WAIT: if (!scs) st<=IDLE;
         endcase
     end
 end
