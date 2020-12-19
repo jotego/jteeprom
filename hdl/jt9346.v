@@ -18,18 +18,22 @@
 
 // Module compatible with Microchip 96C06/46
 
-module jt9346(
-    input      clk,        // system clock
-    input      rst,        // system reset
+module jt9346 #(
+    parameter AW=6, DW=16
+) (
+    input           clk,        // system clock
+    input           rst,        // system reset
     // chip interface
-    input      sclk,       // serial clock
-    input      sdi,         // serial data in
-    output reg sdo,         // serial data out and ready/not busy signal
-    input      scs          // chip select, active high. Goes low in between instructions
-    // Dump access -To do-
+    input           sclk,       // serial clock
+    input           sdi,         // serial data in
+    output      reg sdo,         // serial data out and ready/not busy signal
+    input           scs,         // chip select, active high. Goes low in between instructions
+    // Dump access
+    input           dump_clk,
+    input  [AW-1:0] dump_addr,
+    output [DW-1:0] dump_data
 );
 
-parameter AW=6, DW=16;
 
 reg           erase_en, write_all;
 reg           last_sclk, mem_we;
@@ -51,18 +55,18 @@ localparam IDLE=7'd1, RX=7'd2, READ=7'd4, WRITE=7'd8, WRITE_ALL=7'h10,
 always @(posedge clk) last_sclk <= sclk;
 
 jt9346_dual_ram #(.DW(DW), .AW(AW)) u_ram(
-    .clk0   ( clk   ),
-    .clk1   ( clk   ),
+    .clk0   ( clk       ),
+    .clk1   ( dump_clk  ),
     // First port: internal use
     .addr0  ( addr      ),
     .data0  ( mem_din   ),
     .we0    ( mem_we    ),
     .q0     ( qout      ),
     // Second port: dump
-    .addr1  ( addr      ),
+    .addr1  ( dump_addr ),
     .data1  (           ),
     .we1    ( 1'b0      ),
-    .q1     (           )
+    .q1     ( dump_data )
 );
 
 `ifdef JT9346_SIMULATION
