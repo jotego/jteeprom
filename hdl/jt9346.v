@@ -31,7 +31,9 @@ module jt9346 #(
     // Dump access
     input           dump_clk,
     input  [AW-1:0] dump_addr,
-    output [DW-1:0] dump_data
+    input           dump_we,
+    input  [DW-1:0] dump_din,
+    output [DW-1:0] dump_dout
 );
 
 
@@ -64,9 +66,9 @@ jt9346_dual_ram #(.DW(DW), .AW(AW)) u_ram(
     .q0     ( qout      ),
     // Second port: dump
     .addr1  ( dump_addr ),
-    .data1  (           ),
-    .we1    ( 1'b0      ),
-    .q1     ( dump_data )
+    .data1  ( dump_din  ),
+    .we1    ( dump_we   ),
+    .q1     ( dump_dout )
 );
 
 `ifdef JT9346_SIMULATION
