@@ -34,9 +34,9 @@ end
 always @(posedge clk) begin
     if( start ) start = start-1;
     else begin
-        { cs, sclk, di } <= cmd[cnt];
+        { cs, sclk, di } <= cmd[cnt>>1];
         cnt <= cnt+1;
-        if( cnt == 64*CMDCNT-1 ) $finish;
+        if( cnt == 2*64*CMDCNT-1 ) $finish;
     end
 end
 
@@ -49,9 +49,9 @@ jt9346 UUT(
     .clk    ( clk   ),
     .rst    ( rst   ),
     .sclk   ( sclk  ),
-    .di     ( di    ),
-    .do     ( do    ),
-    .cs     ( cs    )
+    .sdi    ( di    ),
+    .sdo    ( do    ),
+    .scs    ( cs    )
 );
 
 initial begin
