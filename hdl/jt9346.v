@@ -41,15 +41,18 @@ reg           erase_en, write_all;
 reg           last_sclk, mem_we;
 reg  [   1:0] dout_up;
 wire          sclk_posedge = sclk && !last_sclk;
-reg  [AW-1:0] addr, cnt;
+reg  [AW-1:0] addr;
 reg  [DW-1:0] newdata, dout, mem_din;
 wire [DW-1:0] qout;
 reg  [  15:0] rx_cnt;
 reg  [   1:0] op;
 reg  [   6:0] st;
-wire [AW-1:0] next_addr = {addr[AW-2:0], sdi};
 wire [DW-1:0] next_data = { newdata[DW-2:0], sdi };
 wire [AW+1:0] full_op = { op, addr };
+
+`ifdef SIMULATION
+wire [AW-1:0] next_addr = {addr[AW-2:0], sdi};
+`endif
 
 localparam IDLE=7'd1, RX=7'd2, READ=7'd4, WRITE=7'd8, WRITE_ALL=7'h10,
            PRE_READ=7'h20, WAIT=7'h40;
@@ -92,7 +95,6 @@ jt9346_dual_ram #(.DW(DW), .AW(AW)) u_ram(
 always @(posedge clk, posedge rst) begin
     if( rst ) begin
         erase_en <= 0;
-        cnt      <= 0;
         newdata  <= {DW{1'b1}};
         mem_we   <= 0;
         st       <= IDLE;
@@ -157,7 +159,6 @@ always @(posedge clk, posedge rst) begin
                                         if( erase_en ) begin
                                             `REPORT_ERASEALL
                                             sdo     <= 0; // busy
-                                            cnt     <= 0;
                                             newdata <= {DW{1'b1}};
                                             st      <= WRITE_ALL;
                                         end else begin
