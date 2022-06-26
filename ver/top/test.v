@@ -2,18 +2,22 @@
 
 module test;
 
-reg clk, rst, sclk, di, cs;
+parameter CMDCNT=3;
+parameter CMDFILE="dinoboot.bin";
+
+reg clk, rst, sclk, di, cs, rcen=0;
 integer cnt, start=80;
 wire    do;
 
-localparam CMDCNT=3;
+reg         dump_en = 0;
+reg  [ 5:0] dump_addr = 0;
+wire [15:0] dump_dout;
 
-reg [2:0] cmd[0:64*CMDCNT-1];
+reg [2:0] cmd[0:CMDCNT-1];
 
 initial begin
-    $readmemb("read_110010.bin", cmd,0,63);
-    $readmemb("write_110010.bin", cmd,64,64*2-1);
-    $readmemb("read_110010.bin", cmd,64*2,64*3-1);
+    $display("Reading %0d lines from %s",CMDCNT, CMDFILE );
+    $readmemb( CMDFILE, cmd );
 end
 
 initial begin
@@ -32,18 +36,30 @@ initial begin
 end
 
 always @(posedge clk) begin
+    rcen = ~rcen;
     if( start ) start = start-1;
-    else begin
-        { cs, sclk, di } <= cmd[cnt>>1];
+    else if(rcen && !dump_en ) begin
+        { cs, sclk, di } <= cmd[cnt];
         cnt <= cnt+1;
-        if( cnt == 2*64*CMDCNT-1 ) $finish;
+        if( cnt == CMDCNT-1 ) begin
+            dump_en <= 1;
+        end
+    end
+    if( dump_en && rcen ) begin
+        $display("%X: %0X ", dump_addr, dump_dout);
+        dump_addr <= dump_addr + 1;
+        if( &dump_addr ) $finish;
     end
 end
 
 reg [15:0] read_data;
 
-always @(negedge sclk)
-    read_data <= { read_data[14:0], do };
+always @(negedge sclk) begin
+    if( cs )
+        read_data <= { read_data[14:0], do };
+    else
+        read_data <= 0;
+end
 
 jt9346 UUT(
     .clk    ( clk   ),
@@ -51,7 +67,11 @@ jt9346 UUT(
     .sclk   ( sclk  ),
     .sdi    ( di    ),
     .sdo    ( do    ),
-    .scs    ( cs    )
+    .scs    ( cs    ),
+    // Dump
+    .dump_clk (clk      ),
+    .dump_addr(dump_addr),
+    .dump_dout(dump_dout)
 );
 
 initial begin
