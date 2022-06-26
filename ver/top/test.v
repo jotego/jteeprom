@@ -11,7 +11,7 @@ wire    do;
 
 reg         dump_en = 0;
 reg  [ 5:0] dump_addr = 0;
-wire [15:0] dump_dout;
+wire [ 7:0] dump_dout;
 
 reg [2:0] cmd[0:CMDCNT-1];
 
@@ -61,9 +61,9 @@ always @(negedge sclk) begin
         read_data <= 0;
 end
 
-jt9346 UUT(
-    .clk    ( clk   ),
+jt9346 #(.AW(7),.DW(8),.CW(7)) UUT(
     .rst    ( rst   ),
+    .clk    ( clk   ),
     .sclk   ( sclk  ),
     .sdi    ( di    ),
     .sdo    ( do    ),

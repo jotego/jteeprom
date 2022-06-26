@@ -19,10 +19,13 @@
 // Module compatible with Microchip 96C06/46
 
 module jt9346 #(
-    parameter AW=6, DW=16
+    parameter
+    AW=6,   // Memory address bits
+    CW=AW,  // bits between the 2-bit op command and the data
+    DW=16
 ) (
-    input           clk,        // system clock
     input           rst,        // system reset
+    input           clk,        // system clock
     // chip interface
     input           sclk,       // serial clock
     input           sdi,         // serial data in
@@ -38,17 +41,18 @@ module jt9346 #(
 
 
 reg           erase_en, write_all;
+reg           sdi_l;
 reg           last_sclk, mem_we;
 reg  [   1:0] dout_up;
 wire          sclk_posedge = sclk && !last_sclk;
-reg  [AW-1:0] addr;
+reg  [CW-1:0] addr;
 reg  [DW-1:0] newdata, dout, mem_din;
 wire [DW-1:0] qout;
 reg  [  15:0] rx_cnt;
 reg  [   1:0] op;
 reg  [   6:0] st;
 wire [DW-1:0] next_data = { newdata[DW-2:0], sdi };
-wire [AW+1:0] full_op = { op, addr };
+wire [CW+1:0] full_op = { op, addr };
 
 `ifdef SIMULATION
 wire [AW-1:0] next_addr = {addr[AW-2:0], sdi};
@@ -63,7 +67,7 @@ jt9346_dual_ram #(.DW(DW), .AW(AW)) u_ram(
     .clk0   ( clk       ),
     .clk1   ( dump_clk  ),
     // First port: internal use
-    .addr0  ( addr      ),
+    .addr0  ( addr[0+:AW] ),
     .data0  ( mem_din   ),
     .we0    ( mem_we    ),
     .q0     ( qout      ),
@@ -75,8 +79,8 @@ jt9346_dual_ram #(.DW(DW), .AW(AW)) u_ram(
 );
 
 `ifdef JT9346_SIMULATION
-    `define REPORT_WRITE(a,v) $display("EEPROM: %X written to %X", v, a);
-    `define REPORT_READ(a,v) $display("EEPROM: %X read from  %X", v, a);
+    `define REPORT_WRITE(a,v) $display("EEPROM: %X written to %X", v, a[0+:AW]);
+    `define REPORT_READ(a,v) $display("EEPROM: %X read from  %X", v, a[AW-1:0]);
     `define REPORT_ERASE(a  ) $display("EEPROM: %X ERASED", a);
     `define REPORT_ERASEEN  $display("EEPROM: erase enabled");
     `define REPORT_ERASEDIS $display("EEPROM: erase disabled");
@@ -111,19 +115,20 @@ always @(posedge clk, posedge rst) begin
         if( !scs ) begin
             st <= IDLE;
         end else begin
+            if( sclk_posedge && scs ) sdi_l <= sdi;
             case( st )
                 default: begin
                     sdo    <= 1; // ready
-                    if( sclk_posedge && scs && sdi ) begin
+                    if( sclk_posedge && scs && sdi && !sdi_l ) begin
                         st <= RX;
-                        rx_cnt <= 16'h1 << (AW+1);
+                        rx_cnt <= 16'h1 << (CW+1);
                     end
                 end
                 RX: if( sclk_posedge && scs ) begin
                     rx_cnt <= rx_cnt>>1;
-                    { op, addr } <= { full_op[AW:0], sdi };
+                    { op, addr } <= { full_op[CW:0], sdi };
                     if( rx_cnt[0] ) begin
-                        case( full_op[AW:AW-1] ) // op is in bits 6:5
+                        case( full_op[CW:CW-1] ) // op is in bits 6:5
                             2'b10: begin
                                 st      <= READ;
                                 sdo     <= 0;
@@ -133,7 +138,7 @@ always @(posedge clk, posedge rst) begin
                             end
                             2'b01: begin
                                 st        <= WRITE;
-                                rx_cnt    <= 16'h8000;
+                                rx_cnt    <= DW==16 ? 16'h8000 : 16'h80;
                                 write_all <= 1'b0;
                             end
                             2'b11: begin // ERASE
@@ -144,7 +149,7 @@ always @(posedge clk, posedge rst) begin
                                 st <= WAIT;
                             end
                             2'b00:
-                                case( full_op[AW-2:AW-3] )
+                                case( full_op[CW-2:CW-3] )
                                     2'b11: begin
                                         `REPORT_ERASEEN
                                         erase_en <= 1'b1;
