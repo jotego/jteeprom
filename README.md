@@ -4,7 +4,16 @@ Verilog modules compatible with common EEPROM chips such as 93C46 or 93C06 by Jo
 
 # Related Repositories
 
-The FPGA conversion of the [CPS1](https://github.com/jotego/jtcps1) CAPCOM arcade system uses this repository.
+The following repositories use these modules
+
+- [JTCPS](https://github.com/jotego/jtcps1), compatible FPGA core for CAPCOM arcade system
+- [JTPANG](https://github.com/jotego/jtpang), compatible FPGA core for CAPCOM/Mitchell Pang hardware
+
+# Dump Interface
+
+The modules have a dump interface with the same data width as the memory itself. But, there is a [wrapper](hdl/jt9346_16b8b.v) to provide a consistent 8-bit dump interface regardless of the memory width.
+
+[JTFRAME](https://github.com/jotego/jtframe) expects an 8-bit interface, so the wrapper is advised.
 
 # Test waveforms
 
