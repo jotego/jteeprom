@@ -36,7 +36,10 @@ module jt9346 #(
     input  [AW-1:0] dump_addr,
     input           dump_we,
     input  [DW-1:0] dump_din,
-    output [DW-1:0] dump_dout
+    output [DW-1:0] dump_dout,
+    // NVRAM contents changed
+    input           dump_clr,   // Clear the flag
+    output reg      dump_flag   // There was a write
 );
 
 
@@ -104,6 +107,7 @@ always @(posedge clk, posedge rst) begin
         st       <= IDLE;
         sdo      <= 1'b0;
         dout_up  <= 0;
+        dump_flag<= 0;
     end else begin
         if( dout_up[0] ) begin
             `REPORT_READ ( addr, qout )
@@ -111,6 +115,11 @@ always @(posedge clk, posedge rst) begin
             dout_up <= 0;
         end
         mem_we  <= 0;
+        // It flags a write command, not necessarily a data change
+        if( dump_clr )
+            dump_flag <= 0;
+        else if(mem_we) dump_flag <= 1;
+
         dout_up <= dout_up>>1;
         if( !scs ) begin
             st <= IDLE;
