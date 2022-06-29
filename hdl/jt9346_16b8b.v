@@ -33,7 +33,7 @@ module jt9346_16b8b #(
     input           scs,         // chip select, active high. Goes low in between instructions
     // Dump access
     input           dump_clk,
-    input  [(DW==16?AW+1:AW):-0] dump_addr,
+    input  [(DW==16?AW:AW-1):0] dump_addr,
     input           dump_we,
     input     [7:0] dump_din,
     output    [7:0] dump_dout,
@@ -48,8 +48,6 @@ module jt9346_16b8b #(
     wire   [15:0] dx_dout;
     generate
         if( DW==8 ) begin
-            wire [ 7:0] dx_din, dx_dout;
-
             assign dx_addr   = dump_addr;
             always @* begin
                 dx_we  = dump_we;
