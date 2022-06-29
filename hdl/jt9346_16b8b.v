@@ -43,19 +43,24 @@ module jt9346_16b8b #(
 );
 
     wire [AW-1:0] dx_addr;
+    reg           dx_we;
+    reg    [15:0] dx_din;
+    wire   [15:0] dx_dout;
     generate
         if( DW==8 ) begin
             wire [ 7:0] dx_din, dx_dout;
-            wire        dx_we;
 
             assign dx_addr   = dump_addr;
-            assign dx_we     = dump_we;
-            assign dx_din    = dump_din;
-            assign dump_dout = dx_dout;
+            always @* begin
+                dx_we  = dump_we;
+                dx_din[7:0] = dump_din;
+            end
+            assign dump_dout = dx_dout[7:0];
         end else begin
-            reg  [15:0] dx_din=0;
-            wire [15:0] dx_dout;
-            reg         dx_we=0;
+
+            initial begin
+                dx_we=0;
+            end
 
             assign dx_addr   = dump_addr[AW:1];
             assign dump_dout = dump_addr[0] ? dx_dout[15:8] : dx_dout[7:0];
@@ -88,8 +93,8 @@ module jt9346_16b8b #(
         .dump_clk   ( dump_clk  ),
         .dump_addr  ( dx_addr   ),
         .dump_we    ( dx_we     ),
-        .dump_din   ( dx_din    ),
-        .dump_dout  ( dx_dout   ),
+        .dump_din   ( dx_din[0+:DW] ),
+        .dump_dout  ( dx_dout[0+:DW]),
         // NVRAM contents changed
         .dump_clr   ( dump_clr  ),   // Clear the flag
         .dump_flag  ( dump_flag )   // There was a write
