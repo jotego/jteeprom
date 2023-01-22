@@ -151,7 +151,7 @@ always @(posedge clk, posedge rst) begin
                                 write_all <= 1'b0;
                             end
                             2'b11: begin // ERASE
-                                `REPORT_ERASE(next_addr);
+                                `REPORT_ERASE(next_addr)
                                 mem_din <= {DW{1'b1}};
                                 mem_we  <= 1;
                                 // mem[ next_addr ] <= {DW{1'b1}};
