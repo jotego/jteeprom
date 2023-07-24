@@ -21,7 +21,7 @@
 module jt5911 #( parameter
     PROG=0, // 0 = 128x8bit, 1 = 64x16 bit. Pin in the original chip
 localparam
-    AW= PROG ?  5 : 6,   // Memory address bits
+    AW= PROG ?  6 : 7,   // Memory address bits
     DW= PROG ? 16 : 8    // Data width
 ) (
     input           rst,        // system reset
@@ -34,17 +34,17 @@ localparam
     input           scs,         // chip select, active high. Goes low in between instructions
     // Dump access
     input           dump_clk,
-    input  [AW-1:0] dump_addr,
+    input     [6:0] dump_addr,
     input           dump_we,
-    input  [DW-1:0] dump_din,
-    output [DW-1:0] dump_dout,
+    input     [7:0] dump_dout,
+    output    [7:0] dump_din,
     // NVRAM contents changed
     input           dump_clr,   // Clear the flag
     output reg      dump_flag   // There was a write
 );
 
 localparam CW=AW+4;  // bits between the 4-bit op command and the data
-localparam [3:0] CMDIN = PROG ? 4'd10 : 4'd9;
+localparam [3:0] CMDIN = PROG ? 4'd11 : 4'd10;
 
 reg           prog_en, write_all;
 reg           sdi_l;
@@ -58,6 +58,27 @@ reg  [   3:0] rx_cnt;
 reg  [   3:0] op;
 wire [DW-1:0] next_data = { newdata[0+:DW-1], sdi };
 wire [CW-1:0] full_op = { op, addr };
+
+// auxiliary signals for 8-bit dumping
+wire [DW-1:0] aux_dout, aux_din;
+wire [AW-1:0] aux_addr;
+
+generate
+    if( PROG ) begin // 16-bit mode (untested)
+        reg  [7:0]  dout_l;
+
+        always @(posedge clk) if(dump_we && !dump_addr[0]) dout_l <= dump_dout;
+        assign dump_din = dump_addr[0] ? aux_din[15:8] : aux_din[7:0];
+        assign aux_dout = { dump_dout, dout_l };
+        assign aux_addr = dump_addr[6:1];
+    end else begin // 8-bit mode
+        assign dump_din = aux_din;
+        assign aux_dout = dump_dout;
+        assign aux_addr = dump_addr;
+    end
+endgenerate
+
+
 
 `ifdef SIMULATION
 wire [AW-1:0] next_addr = {addr[AW-2:0], sdi};
@@ -76,10 +97,10 @@ jt5911_dual_ram #(.DW(DW), .AW(AW)) u_ram(
     .we0    ( mem_we    ),
     .q0     ( qout      ),
     // Second port: dump
-    .addr1  ( dump_addr ),
-    .data1  ( dump_din  ),
+    .addr1  ( aux_addr  ),
+    .data1  ( aux_dout  ),
     .we1    ( dump_we   ),
-    .q1     ( dump_dout )
+    .q1     ( aux_din   )
 );
 
 `ifdef JT5911_SIMULATION
