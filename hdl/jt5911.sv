@@ -84,7 +84,7 @@ endgenerate
 wire [AW-1:0] next_addr = {addr[AW-2:0], sdi};
 `endif
 
-enum { IDLE=0, RX, READ, WRITE, WRITE_ALL, WAIT} st;
+enum logic [2:0] { IDLE=0, RX, READ, WRITE, WRITE_ALL, WAIT} st;
 
 always @(posedge clk) last_sclk <= sclk;
 
@@ -145,75 +145,82 @@ always @(posedge clk, posedge rst) begin
         if( !scs ) begin
             st  <= IDLE;
             rdy <= 1;
-        end else if( sclk_posedge ) begin
-            sdi_l <= sdi;
-            case( st )
-                RX: begin
-                    rx_cnt <= rx_cnt+1'd1;
-                    { op, addr } <= { full_op[CW-2:0], sdi };
-                    if( rx_cnt==CMDIN ) begin
-                        casez( full_op[CW-1-:4] ) // op is top 4 bits
-                            4'b1000: begin
-                                st      <= READ;
-                                sdo     <= 0;
-                                dout_up <= 2'b10;
-                            end
-                            4'b?100: if( prog_en ) begin
-                                st        <= WRITE;
-                                rx_cnt    <= 0;
-                                write_all <= 0;
-                            end else begin
-                                st <= WAIT;
-                            end
-                            4'b0011: begin
-                                `JT5911_ERASEEN
-                                prog_en <= 1;
-                                st <= WAIT;
-                            end
-                            4'b0000: begin
-                                `JT5911_ERASEDIS
-                                prog_en <= 1'b0;
-                                st <= WAIT;
-                            end
-                            4'b0010: if( prog_en ) begin
-                                `JT5911_ERASEALL
-                                rdy     <= 0;
-                                newdata <= '1;
-                                st      <= WRITE_ALL;
-                            end else begin
-                                st <= WAIT;
-                            end
-                            default: st <= WAIT;
-                        endcase
+            sdo <= 1;
+        end else  begin
+            if( st==WRITE_ALL) begin
+                addr   <= addr+1'd1;
+                mem_we <= 1;
+                if( &addr ) begin
+                    st  <= WAIT;
+                    rdy <= 1;
+                end
+            end
+            if( sclk_posedge ) begin
+                sdi_l <= sdi;
+                case( st )
+                    RX: begin
+                        rx_cnt <= rx_cnt+1'd1;
+                        { op, addr } <= { full_op[CW-2:0], sdi };
+                        if( rx_cnt==CMDIN ) begin
+                            casez( full_op[CW-1-:4] ) // op is top 4 bits
+                                4'b1000: begin
+                                    st      <= READ;
+                                    sdo     <= 0;
+                                    dout_up <= 2'b10;
+                                end
+                                4'b?100: if( prog_en ) begin
+                                    st        <= WRITE;
+                                    rx_cnt    <= 0;
+                                    write_all <= 0;
+                                end else begin
+                                    st <= WAIT;
+                                end
+                                4'b0011: begin
+                                    `JT5911_ERASEEN
+                                    prog_en <= 1;
+                                    st <= WAIT;
+                                end
+                                4'b0000: begin
+                                    `JT5911_ERASEDIS
+                                    prog_en <= 1'b0;
+                                    st <= WAIT;
+                                end
+                                4'b0010: if( prog_en ) begin
+                                    `JT5911_ERASEALL
+                                    rdy     <= 0;
+                                    newdata <= '1;
+                                    st      <= WRITE_ALL;
+                                end else begin
+                                    st <= WAIT;
+                                end
+                                default: st <= WAIT;
+                            endcase
+                        end
                     end
-                end
-                WRITE: begin
-                    newdata <= next_data;
-                    rx_cnt  <= rx_cnt+1'd1;
-                    sdo     <= 0; // busy
-                    if( rx_cnt == (PROG?4'hf:4'h7) ) begin
-                        mem_we <= 1;
-                            `JT5911_WRITE( addr, next_data )
-                        mem_din <= next_data;
-                        st <= WAIT;
+                    WRITE: begin
+                        newdata <= next_data;
+                        rx_cnt  <= rx_cnt+1'd1;
+                        sdo     <= 0; // busy
+                        if( rx_cnt == (PROG?4'hf:4'h7) ) begin
+                            mem_we <= 1;
+                                `JT5911_WRITE( addr, next_data )
+                            mem_din <= next_data;
+                            st <= WAIT;
+                        end
                     end
-                end
-                READ: { sdo, dout} <= { dout, 1'b1 };
-                WRITE_ALL: begin
-                    addr   <= addr+1'd1;
-                    mem_we <= 1;
-                    if( &addr ) st <= WAIT;
-                end
-                WAIT: rdy <= 1;
-                IDLE: begin
-                    sdo <= 1; // ready
-                    if( sclk_posedge && sdi && !sdi_l ) begin
-                        st <= RX; // start-bit detected
-                        rx_cnt <= 0;
+                    READ: { sdo, dout} <= { dout, 1'b1 };
+                    WAIT: rdy <= 1;
+                    IDLE: begin
+                        sdo <= 1;
+                        rdy <= 1;
+                        if( sdi && !sdi_l ) begin
+                            st <= RX; // start-bit detected
+                            rx_cnt <= 0;
+                        end
                     end
-                end
-                default:;
-            endcase
+                    default:;
+                endcase
+            end
         end
     end
 end
