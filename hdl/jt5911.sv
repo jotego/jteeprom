@@ -19,10 +19,8 @@
 // Module compatible with Microchip ER5911
 
 module jt5911 #( parameter
-    PROG=0, // 0 = 128x8bit, 1 = 64x16 bit. Pin in the original chip
-localparam
-    AW= PROG ?  6 : 7,   // Memory address bits
-    DW= PROG ? 16 : 8    // Data width
+    PROG=0,     // 0 = 128x8bit, 1 = 64x16 bit. Pin in the original chip
+    SIMFILE=""  // name of binary file to load during simulation
 ) (
     input           rst,        // system reset
     input           clk,        // system clock
@@ -43,8 +41,10 @@ localparam
     output reg      dump_flag   // There was a write
 );
 
-localparam CW=AW+4;  // bits between the 4-bit op command and the data
-localparam [3:0] CMDIN = PROG ? 4'd11 : 4'd10;
+localparam  AW= PROG ?  6 : 7,   // Memory address bits
+            DW= PROG ? 16 : 8,   // Data width
+            CW=AW+4;  // bits between the 4-bit op command and the data
+localparam  [3:0] CMDIN = PROG ? 4'd11 : 4'd10;
 
 reg           prog_en, write_all;
 reg           sdi_l;
@@ -84,11 +84,17 @@ endgenerate
 wire [AW-1:0] next_addr = {addr[AW-2:0], sdi};
 `endif
 
-enum logic [2:0] { IDLE=0, RX, READ, WRITE, WRITE_ALL, WAIT} st;
+enum logic [2:0] { IDLE      = 3'd0,
+                   RX        = 3'd1,
+                   READ      = 3'd2,
+                   WRITE     = 3'd3,
+                   WRITE_ALL = 3'd4,
+                   WAIT      = 3'd5
+                } st;
 
 always @(posedge clk) last_sclk <= sclk;
 
-jt5911_dual_ram #(.DW(DW), .AW(AW)) u_ram(
+jt5911_dual_ram #(.DW(DW), .AW(AW), .SIMFILE(SIMFILE) ) u_ram(
     .clk0   ( clk       ),
     .clk1   ( dump_clk  ),
     // First port: internal use
@@ -105,10 +111,10 @@ jt5911_dual_ram #(.DW(DW), .AW(AW)) u_ram(
 
 `ifdef JT5911_SIMULATION
     `define JT5911_WRITE(a,v) $display("EEPROM: %X written to %X", v, a[0+:AW]);
-    `define JT5911_READ(a,v) $display("EEPROM: %X read from  %X", v, a[AW-1:0]);
-    `define JT5911_ERASEEN  $display("EEPROM: erase enabled");
-    `define JT5911_ERASEDIS $display("EEPROM: erase disabled");
-    `define JT5911_ERASEALL $display("EEPROM: erase all");
+    `define JT5911_READ(a,v)  $display("EEPROM: %X read from  %X", v, a[AW-1:0]);
+    `define JT5911_ERASEEN    $display("EEPROM: erase enabled");
+    `define JT5911_ERASEDIS   $display("EEPROM: erase disabled");
+    `define JT5911_ERASEALL   $display("EEPROM: erase all");
 `else
     `define JT5911_WRITE(a,v)
     `define JT5911_READ(a,v)
@@ -162,7 +168,7 @@ always @(posedge clk, posedge rst) begin
                         rx_cnt <= rx_cnt+1'd1;
                         { op, addr } <= { full_op[CW-2:0], sdi };
                         if( rx_cnt==CMDIN ) begin
-                            casez( full_op[CW-1-:4] ) // op is top 4 bits
+                            casez( full_op[CW-2-:4] ) // op is top 4 bits
                                 4'b1000: begin
                                     st      <= READ;
                                     sdo     <= 0;
@@ -228,7 +234,7 @@ end
 endmodule
 
 
-module jt5911_dual_ram #(parameter DW=8, AW=10) (
+module jt5911_dual_ram #(parameter DW=8, AW=10, SIMFILE="") (
     input   clk0,
     input   clk1,
     // Port 0
@@ -249,10 +255,22 @@ module jt5911_dual_ram #(parameter DW=8, AW=10) (
 (* ramstyle = "no_rw_check" *) reg [DW-1:0] mem[0:(2**AW)-1];
 
 `ifdef SIMULATION
-integer rstcnt;
+integer rstcnt, f, readcnt;
+
 initial begin
-    for( rstcnt=0; rstcnt<2**AW; rstcnt=rstcnt+1)
-        mem[rstcnt] = {DW{1'b1}};
+    if( SIMFILE != 0 ) begin
+        f=$fopen(SIMFILE,"rb");
+        if( f != 0 ) begin
+            readcnt=$fread( mem, f );
+            $display("INFO: Read %14s (%4d bytes) for %m",SIMFILE, readcnt);
+            $fclose(f);
+        end else begin
+            $display("WARNING: %m cannot open file: %s", SIMFILE);
+        end
+    end else begin
+        for( rstcnt=0; rstcnt<2**AW; rstcnt=rstcnt+1)
+            mem[rstcnt] = {DW{1'b1}};
+    end
 end
 `endif
 always @(posedge clk0) begin
