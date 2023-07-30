@@ -56,6 +56,7 @@ reg  [DW-1:0] newdata, dout, mem_din;
 wire [DW-1:0] qout;
 reg  [   3:0] rx_cnt;
 reg  [   3:0] op;
+reg  [   3:0] csl;
 wire [DW-1:0] next_data = { newdata[0+:DW-1], sdi };
 wire [CW-1:0] full_op = { op, addr };
 
@@ -92,7 +93,11 @@ enum logic [2:0] { IDLE      = 3'd0,
                    WAIT      = 3'd5
                 } st;
 
-always @(posedge clk) last_sclk <= sclk;
+always @(posedge clk) begin
+    last_sclk <= sclk;
+    csl       <= csl << 1;
+    csl[0]    <= scs;
+end
 
 jt5911_dual_ram #(.DW(DW), .AW(AW), .SIMFILE(SIMFILE) ) u_ram(
     .clk0   ( clk       ),
@@ -148,7 +153,9 @@ always @(posedge clk, posedge rst) begin
             dump_flag <= 0;
         else if(mem_we) dump_flag <= 1;
 
-        if( !scs ) begin
+        if( ~&csl ) begin // instead of simply !scs. This prevents reacting
+            // to sdi/sclk inputs right when cs goes high. Original chip had
+            // a 400ns blind time after cs went high according to datasheet
             st  <= IDLE;
             rdy <= 1;
             sdo <= 1;
