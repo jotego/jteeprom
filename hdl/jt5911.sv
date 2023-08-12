@@ -20,7 +20,8 @@
 
 module jt5911 #( parameter
     PROG=0,     // 0 = 128x8bit, 1 = 64x16 bit. Pin in the original chip
-    SIMFILE=""  // name of binary file to load during simulation
+    SIMFILE="", // name of binary file to load during simulation
+    SYNHEX=""   // name of hex file to load for synthesis
 ) (
     input           rst,        // system reset
     input           clk,        // system clock
@@ -99,7 +100,7 @@ always @(posedge clk) begin
     csl[0]    <= scs;
 end
 
-jt5911_dual_ram #(.DW(DW), .AW(AW), .SIMFILE(SIMFILE) ) u_ram(
+jt5911_dual_ram #(.DW(DW), .AW(AW), .SIMFILE(SIMFILE), .SYNHEX(SYNHEX)) u_ram(
     .clk0   ( clk       ),
     .clk1   ( dump_clk  ),
     // First port: internal use
@@ -241,7 +242,7 @@ end
 endmodule
 
 
-module jt5911_dual_ram #(parameter DW=8, AW=10, SIMFILE="") (
+module jt5911_dual_ram #(parameter DW=8, AW=10, SIMFILE="", SYNHEX="") (
     input   clk0,
     input   clk1,
     // Port 0
@@ -277,6 +278,12 @@ initial begin
     end else begin
         for( rstcnt=0; rstcnt<2**AW; rstcnt=rstcnt+1)
             mem[rstcnt] = {DW{1'b1}};
+    end
+end
+`else
+initial begin
+    if( SYNHEX != 0 ) begin
+        $readmemh( SYNHEX, mem );
     end
 end
 `endif
