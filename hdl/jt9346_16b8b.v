@@ -48,7 +48,7 @@ module jt9346_16b8b #(
 
     generate
         if( DW==8 ) begin
-            assign dx_addr   = dump_addr;
+            assign dx_addr   = dump_addr[AW-1:0];
             assign dx_we     = dump_we;
             assign dx_din    = dump_din;
             assign dump_dout = dx_dout;
