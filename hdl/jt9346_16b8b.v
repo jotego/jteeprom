@@ -43,38 +43,37 @@ module jt9346_16b8b #(
 );
 
     wire [AW-1:0] dx_addr;
+    wire          dx_we;
+    wire [DW-1:0] dx_din, dx_dout;
+
     generate
         if( DW==8 ) begin
-            wire [ 7:0] dx_din, dx_dout;
-            wire        dx_we;
-
             assign dx_addr   = dump_addr;
             assign dx_we     = dump_we;
             assign dx_din    = dump_din;
             assign dump_dout = dx_dout;
         end else begin
-            reg  [15:0] dx_din=0;
-            wire [15:0] dx_dout;
-            reg         dx_we=0;
+            reg  [15:0] xx_din=0;
+            reg         xx_we=0;
 
+            assign dx_we     = xx_we;
             assign dx_addr   = dump_addr[AW:1];
             assign dump_dout = dump_addr[0] ? dx_dout[15:8] : dx_dout[7:0];
+            assign dx_din    = xx_din[DW-1:0];
 
             always @(posedge clk) begin
-                dx_we <= 0;
+                xx_we <= 0;
                 if (dump_we) begin
                     if(dump_addr[0]) begin
-                        dx_we <= 1;
-                        dx_din[15:8] <= dump_din;
+                        xx_we <= 1;
+                        xx_din[15:8] <= dump_din;
                     end else begin
-                        dx_din[7:0] <= dump_din;
+                        xx_din[7:0] <= dump_din;
                     end
                 end
             end
         end
     endgenerate
-
-
 
     jt9346 #(.AW(AW),.DW(DW),.CW(CW)) u_jt9346 (
         .rst        ( rst       ),        // system reset
