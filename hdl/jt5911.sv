@@ -20,6 +20,7 @@
 
 module jt5911 #( parameter
     PROG=0,     // 0 = 128x8bit, 1 = 64x16 bit. Pin in the original chip
+                // 16 bit mode untested!
     SIMFILE="", // name of binary file to load during simulation
     SYNHEX=""   // name of hex file to load for synthesis
 ) (
@@ -31,12 +32,12 @@ module jt5911 #( parameter
     output      reg sdo,         // serial data out
     output      reg rdy,
     input           scs,         // chip select, active high. Goes low in between instructions
-    // Dump access
-    input           dump_clk,
-    input     [6:0] dump_addr,
-    input           dump_we,
-    input     [7:0] dump_dout,
-    output    [7:0] dump_din,
+    // RAM is external
+    output reg [AW-1:0] mem_addr,
+    output reg [DW-1:0] mem_din,
+    output reg          mem_we,
+    input      [DW-1:0] mem_dout,
+
     // NVRAM contents changed
     input           dump_clr,   // Clear the flag
     output reg      dump_flag   // There was a write
@@ -49,41 +50,18 @@ localparam  [3:0] CMDIN = PROG ? 4'd11 : 4'd10;
 
 reg           prog_en, write_all;
 reg           sdi_l;
-reg           last_sclk, mem_we;
+reg           last_sclk;
 reg  [   1:0] dout_up;
 wire          sclk_posedge = sclk && !last_sclk;
-reg  [AW-1:0] addr;
-reg  [DW-1:0] newdata, dout, mem_din;
-wire [DW-1:0] qout;
+reg  [DW-1:0] newdata, dout;
 reg  [   3:0] rx_cnt;
 reg  [   3:0] op;
 reg  [   3:0] csl;
 wire [DW-1:0] next_data = { newdata[0+:DW-1], sdi };
-wire [CW-1:0] full_op = { op, addr };
-
-// auxiliary signals for 8-bit dumping
-wire [DW-1:0] aux_dout, aux_din;
-wire [AW-1:0] aux_addr;
-
-generate
-    if( PROG ) begin // 16-bit mode (untested)
-        reg  [7:0]  dout_l;
-
-        always @(posedge clk) if(dump_we && !dump_addr[0]) dout_l <= dump_dout;
-        assign dump_din = dump_addr[0] ? aux_din[15:8] : aux_din[7:0];
-        assign aux_dout = { dump_dout, dout_l };
-        assign aux_addr = dump_addr[6:1];
-    end else begin // 8-bit mode
-        assign dump_din = aux_din;
-        assign aux_dout = dump_dout;
-        assign aux_addr = dump_addr;
-    end
-endgenerate
-
-
+wire [CW-1:0] full_op = { op, mem_addr };
 
 `ifdef SIMULATION
-wire [AW-1:0] next_addr = {addr[AW-2:0], sdi};
+wire [AW-1:0] next_addr = {mem_addr[AW-2:0], sdi};
 `endif
 
 enum logic [2:0] { IDLE      = 3'd0,
@@ -99,21 +77,6 @@ always @(posedge clk) begin
     csl       <= csl << 1;
     csl[0]    <= scs;
 end
-
-jt5911_dual_ram #(.DW(DW), .AW(AW), .SIMFILE(SIMFILE), .SYNHEX(SYNHEX)) u_ram(
-    .clk0   ( clk       ),
-    .clk1   ( dump_clk  ),
-    // First port: internal use
-    .addr0  ( addr      ),
-    .data0  ( mem_din   ),
-    .we0    ( mem_we    ),
-    .q0     ( qout      ),
-    // Second port: dump
-    .addr1  ( aux_addr  ),
-    .data1  ( aux_dout  ),
-    .we1    ( dump_we   ),
-    .q1     ( aux_din   )
-);
 
 `ifdef JT5911_SIMULATION
     `define JT5911_WRITE(a,v) $display("EEPROM: %X written to %X", v, a[0+:AW]);
@@ -144,8 +107,8 @@ always @(posedge clk, posedge rst) begin
         // data output
         dout_up <= dout_up>>1;
         if( dout_up[0] ) begin
-            `JT5911_READ ( addr, qout )
-            dout    <= qout;
+            `JT5911_READ ( mem_addr, mem_dout )
+            dout    <= mem_dout;
         end
         mem_we <= 0;
 
@@ -162,9 +125,9 @@ always @(posedge clk, posedge rst) begin
             sdo <= 1;
         end else  begin
             if( st==WRITE_ALL) begin
-                addr   <= addr+1'd1;
+                mem_addr   <= mem_addr+1'd1;
                 mem_we <= 1;
-                if( &addr ) begin
+                if( &mem_addr ) begin
                     st  <= WAIT;
                     rdy <= 1;
                 end
@@ -174,7 +137,7 @@ always @(posedge clk, posedge rst) begin
                 case( st )
                     RX: begin
                         rx_cnt <= rx_cnt+1'd1;
-                        { op, addr } <= { full_op[CW-2:0], sdi };
+                        { op, mem_addr } <= { full_op[CW-2:0], sdi };
                         if( rx_cnt==CMDIN ) begin
                             casez( full_op[CW-2-:4] ) // op is top 4 bits
                                 4'b1000: begin
@@ -217,7 +180,7 @@ always @(posedge clk, posedge rst) begin
                         sdo     <= 0; // busy
                         if( rx_cnt == (PROG?4'hf:4'h7) ) begin
                             mem_we <= 1;
-                                `JT5911_WRITE( addr, next_data )
+                                `JT5911_WRITE( mem_addr, next_data )
                             mem_din <= next_data;
                             st <= WAIT;
                         end
@@ -239,62 +202,4 @@ always @(posedge clk, posedge rst) begin
     end
 end
 
-endmodule
-
-
-module jt5911_dual_ram #(parameter DW=8, AW=10, SIMFILE="", SYNHEX="") (
-    input   clk0,
-    input   clk1,
-    // Port 0
-    input   [DW-1:0] data0,
-    input   [AW-1:0] addr0,
-    input   we0,
-    output reg [DW-1:0] q0,
-    // Port 1
-    input   [DW-1:0] data1,
-    input   [AW-1:0] addr1,
-    input   we1,
-    output reg [DW-1:0] q1
-    `ifdef JTFRAME_DUAL_RAM_DUMP
-    ,input dump
-    `endif
-);
-/* verilator lint_off MULTIDRIVEN */
-(* ramstyle = "no_rw_check" *) reg [DW-1:0] mem[0:(2**AW)-1];
-
-`ifdef SIMULATION
-integer rstcnt, f, readcnt;
-
-initial begin
-    if( SIMFILE != 0 ) begin
-        f=$fopen(SIMFILE,"rb");
-        if( f != 0 ) begin
-            readcnt=$fread( mem, f );
-            $display("INFO: Read %14s (%4d bytes) for %m",SIMFILE, readcnt);
-            $fclose(f);
-        end else begin
-            $display("WARNING: %m cannot open file: %s", SIMFILE);
-        end
-    end else begin
-        for( rstcnt=0; rstcnt<2**AW; rstcnt=rstcnt+1)
-            mem[rstcnt] = {DW{1'b1}};
-    end
-end
-`else
-initial begin
-    if( SYNHEX != 0 ) begin
-        $readmemh( SYNHEX, mem );
-    end
-end
-`endif
-always @(posedge clk0) begin
-    q0 <= mem[addr0];
-    if(we0) mem[addr0] <= data0;
-end
-
-always @(posedge clk1) begin
-    q1 <= mem[addr1];
-    if(we1) mem[addr1] <= data1;
-end
-/* verilator lint_on MULTIDRIVEN */
 endmodule
