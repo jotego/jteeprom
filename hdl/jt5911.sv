@@ -22,7 +22,10 @@ module jt5911 #( parameter
     PROG=0,     // 0 = 128x8bit, 1 = 64x16 bit. Pin in the original chip
                 // 16 bit mode untested!
     SIMFILE="", // name of binary file to load during simulation
-    SYNHEX=""   // name of hex file to load for synthesis
+    SYNHEX="",  // name of hex file to load for synthesis
+    // Do not assign manually
+    AW= PROG ?  6 : 7,   // Memory address bits
+    DW= PROG ? 16 : 8    // Data width
 ) (
     input           rst,        // system reset
     input           clk,        // system clock
@@ -43,9 +46,7 @@ module jt5911 #( parameter
     output reg      dump_flag   // There was a write
 );
 
-localparam  AW= PROG ?  6 : 7,   // Memory address bits
-            DW= PROG ? 16 : 8,   // Data width
-            CW=AW+4;  // bits between the 4-bit op command and the data
+localparam  CW=AW+4;  // bits between the 4-bit op command and the data
 localparam  [3:0] CMDIN = PROG ? 4'd11 : 4'd10;
 
 reg           prog_en, write_all;
