@@ -1,5 +1,7 @@
 # JTEEPROM
 
+> **Archived:** This repository is archived and is no longer maintained here. The latest version is now maintained in [jotego/jtcores](https://github.com/jotego/jtcores/tree/master/modules/jteeprom), under `modules/jteeprom`.
+
 Verilog modules compatible with common EEPROM chips such as 93C46 or 93C06 by Jose Tejada (jotego)
 
 You can show your appreciation through
